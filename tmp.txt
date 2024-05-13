@@ -1,0 +1,14 @@
+class DevonshireCream {
+  serveOn str() {
+    return "Scones";
+  }
+}
+
+var devonshireCream = DevonshireCream();
+print DevonshireCream; // Prints "<class DevonshireCream>".
+print devonshireCream;
+
+class Bagel {}
+var bagel = Bagel();
+print Bagel;
+print bagel;

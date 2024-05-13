@@ -1,0 +1,49 @@
+Program     = Program: (Statement)*, Special::EOF ;
+Statement   = ExprStmt: ExprStmt
+            / PrintStmt: PrintStmt
+            / VarDecl: VarDecl
+            / FuncDecl: KeyWord::Func, Literal::Ident, FuncDecl
+            / ClassDecl: KeyWord::Class, Literal::Ident, OneChar::LeftBrace, (Literal::Ident, FuncDecl)*, OneChar::RightBrace
+            / ConstDecl: ConstDecl
+            / Block: Block
+            / IfStmt: IfStmt
+            / WhileStmt: WhileStmt
+            / Break: KeyWord::Break, OneChar::Semicolon
+            / Continue: KeyWord::Continue, OneChar::Semicolon
+            / Return: KeyWord::Return, (Expression)?, OneChar::Semicolon
+            / ForStmt: ForStmt ;
+Block       = Block: OneChar::LeftBrace, (Statement)*, OneChar::RightBrace ;
+ForStmt     = VarDecl:    KeyWord::For, OneChar::LeftParen, VarDecl,            (Expression)?, OneChar::Semicolon, (Expression)?,
+                OneChar::RightParen, Statement
+            / Expression: KeyWord::For, OneChar::LeftParen, ExprStmt,           (Expression)?, OneChar::Semicolon, (Expression)?,
+                OneChar::RightParen, Statement
+            / None:       KeyWord::For, OneChar::LeftParen, OneChar::Semicolon, (Expression)?, OneChar::Semicolon, (Expression)?,
+                OneChar::RightParen, Statement ;
+WhileStmt   = WhileStmt: KeyWord::While, OneChar::LeftParen, Expression, OneChar::RightParen, Statement ;
+IfStmt      = IfStmt: KeyWord::If, OneChar::LeftParen, Expression, OneChar::RightParen, Statement,
+            (KeyWord::Elif, OneChar::LeftParen, Expression, OneChar::RightParen, Statement)*,
+            (KeyWord::Else, Statement)? ;
+VarDecl     = VarDecl: KeyWord::Var, Literal::Ident, (OneTwoChar::Equal, Expression)?, OneChar::Semicolon ;
+ConstDecl   = ConstDecl: KeyWord::Const, Literal::Ident, OneTwoChar::Equal, Expression, OneChar::Semicolon ;
+ExprStmt    = ExprStmt: Expression, OneChar::Semicolon ;
+PrintStmt   = PrintStmt: KeyWord::Print, Expression, OneChar::Semicolon ;
+Expression  = Expression: LogicOr
+            / Assignment: Assignment ;
+LogicOr     = LogicOr: LogicAnd, (KeyWord::Or, LogicAnd)* ;
+LogicAnd    = LogicAnd: Equality, (KeyWord::And, Equality)* ;
+Assignment  = Assignment: Literal::Ident, OneTwoChar::Equal, Expression ;
+Equality    = Equality: Comparison, (OneTwoChar::EqualEqual | OneTwoChar::BangEqual, Comparison)* ;
+Comparison  = Comparison: Term, (OneTwoChar::Greater | OneTwoChar::GreaterEqual | OneTwoChar::Less | OneTwoChar::LessEqual, Term)* ;
+Term        = Term: Factor, (OneChar::Plus | OneChar::Minus, Factor)* ;
+Factor      = Factor: Unary, (OneChar::Star | Special::Slash, Unary)* ;
+Unary       = Unary: (OneChar::Minus | OneChar::Plus | OneTwoChar::Bang)*, FuncCall ;
+FuncCall    = FuncCall: Primary, (FuncCall2)* ;
+FuncCall2   = Call: OneChar::LeftParen, (Arguments)?, OneChar::RightParen
+            / Property: OneChar::Dot, Literal::Ident;
+Primary     = Literal: Literal::Integer | Literal::Float | Literal::String | Literal::Ident
+            | KeyWord::True | KeyWord::False | KeyWord::Null
+            / Func: KeyWord::Func, FuncDecl
+            / Parenthesized: OneChar::LeftParen, Expression, OneChar::RightParen ;
+FuncDecl    = FuncDecl: Literal::Ident, OneChar::LeftParen, ArgDecl, OneChar::RightParen, Block ;
+ArgDecl     = ArgDecl: (Literal::Ident, OneChar::Colon, Literal::Ident, (OneChar::Coma, Literal::Ident, OneChar::Colon, Literal::Ident)*)? ;
+Arguments   = Arguments: Expression, (OneChar::Coma, Expression)* ;

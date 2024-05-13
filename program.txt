@@ -1,0 +1,103 @@
+class Math {
+	const PI = 3.14159;
+	
+	func add int(arg1: int, arg2: int) {
+		return arg1 + arg2;
+	}
+	
+	func sub int(arg1: int, arg2: int) {
+		return arg1 - arg2;
+	}
+	
+	func mul int(arg1: int, arg2: int) {
+		return arg1 * arg2;
+	}
+	
+	// let's see if it can differentiate between comments and division
+	func div int(arg1: int, arg2: int) {
+		return arg1 / arg2;
+	}
+	
+	func eq bool(arg1: int, arg2: int) {
+		return arg1 == arg2;
+	}
+	
+	func neq bool(arg1: int, arg2: int) {
+		return arg1 != arg2;
+	}
+	
+	func gt bool(arg1: int, arg2: int) {
+		return arg1 > arg2;
+	}
+	
+	func gte bool(arg1: int, arg2: int) {
+		return arg1 >= arg2;
+	}
+	
+	func lt bool(arg1: int, arg2: int) {
+		return arg1 < arg2;
+	}
+	
+	func lte bool(arg1: int, arg2: int) {
+		return arg1 <= arg2;
+	}
+}
+
+class Logic {
+	func and_ bool(arg1: bool, arg2: bool) {
+		return arg1 and arg2;
+	}
+	
+	func or_ bool(arg1: bool, arg2: bool) {
+		return arg1 or arg2;
+	}
+	
+	func not bool(arg: bool) {
+		return !arg;
+	}
+}
+
+class Inheritance < Object {
+	func init void(arg1: int, arg2: int) {
+		super.init(arg1);
+		this.arg2 = arg2;
+	}
+}
+
+/*
+the main function to test the language
+This comment should be commented
+*/
+
+func main void() {
+	/*some weird multiline comment
+	 *Let's make it pretty long
+	 *Like real long
+	 *Ok, this is probably enough
+	 */
+	
+	print "Hello world!";
+	print "200 + 300 = ";
+	print Math.add(200, 300);
+	var some_var = 2.;
+	var other_var = 123.456;
+	
+	if (Logic.and_(Math.lte(2, 3), Math.gte(2, 3))) {
+		print "equal to...";
+	} elif (Logic.or_(Math.lte(2, 3), true)) {
+		print "not equal to...";
+	} else {
+		print "WAIT, WHAT!!!!!!!!";
+	}
+	
+	for (var i = 0; i < 10; i = i + 1) {
+		var j = 5;
+		while (j) {
+			j = Math.sub(j, 1);
+		}
+	}
+	
+	var i_dont_exist = null;
+}
+
+main();
