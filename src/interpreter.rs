@@ -687,7 +687,7 @@ impl Interpret for FuncCall {
                         ));
                     }
                 }
-                FuncCall2::Property(_, (_, ident)) => todo!(),
+                FuncCall2::Property(_, (_, _ident)) => todo!(),
             }
         }
         Ok(res)

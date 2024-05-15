@@ -321,6 +321,20 @@ impl LoxType {
             LoxType::Null => "null".into(),
         }
     }
+
+    pub fn get_python_type(&self) -> String {
+        match self {
+            LoxType::Integer(_) => "int",
+            LoxType::Float(_) => "float",
+            LoxType::String(_) => "str",
+            LoxType::Bool(_) => "bool",
+            LoxType::Function(_) => "typing.Callable",
+            LoxType::Class(_) => "typing.Type",
+            LoxType::Instance(_) => "object",
+            LoxType::Null => "None",
+        }
+        .into()
+    }
 }
 
 impl TryFrom<&Token> for LoxType {
