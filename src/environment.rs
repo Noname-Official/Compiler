@@ -29,12 +29,8 @@ const BUILD_IN_FUNCS: [LoxType; 3] = [
 ];
 
 thread_local! {
-// lazy_static::lazy_static! {
     static SCOPES: RefCell<Vec<_Scope>> = const { RefCell::new(Vec::new()) };
     static DISTS: RefCell<Dists> = RefCell::new(Dists::new());
-
-// static SCOPES: RefCell<Vec<_Scope>> = Vec::new().into();
-// static DISTS: RefCell<Dists> = Dists::new().into();
 }
 
 #[derive(Clone, Debug)]

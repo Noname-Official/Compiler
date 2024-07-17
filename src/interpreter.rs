@@ -81,9 +81,6 @@ impl Interpret for Statement {
                 let FuncDecl::FuncDecl(_, (return_type, _, arg_decl, _, block)) =
                     func_decl.as_ref();
                 let ArgDecl::ArgDecl(_, (args,)) = arg_decl.as_ref();
-                // let drop_guard = environment.enter_scope();
-                // let env = environment.clone();
-                // drop(drop_guard);
                 environment.define(
                     name.lexeme.clone(),
                     Some(LoxType::Function(LoxFunction::UserDefined {
@@ -687,7 +684,7 @@ impl Interpret for FuncCall {
                         ));
                     }
                 }
-                FuncCall2::Property(_, (_, ident)) => todo!(),
+                FuncCall2::Property(_, (_, _ident)) => todo!(),
             }
         }
         Ok(res)
@@ -719,8 +716,6 @@ impl Interpret for FuncDecl {
     fn interpret(&self, environment: &mut Scope) -> Result<Option<LoxType>, Error> {
         let FuncDecl::FuncDecl(_, (return_type, _, arg_decl, _, block)) = self;
         let environment = environment.enter_scope();
-        // let env = environment.clone();
-        // drop(dropguard);
         Ok(Some(LoxType::Function(LoxFunction::UserDefined {
             name: String::from("lambda"),
             block: block.clone(),

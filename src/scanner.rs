@@ -5,63 +5,32 @@ use crate::{
         Token,
     },
 };
-use std::{iter::Peekable, str::FromStr, vec::IntoIter};
+use std::{char, iter::Peekable, rc::Rc, str::FromStr, sync::RwLock};
 use strum::{EnumMessage, IntoEnumIterator};
 
-pub struct Scanner<'a> {
+pub struct Scanner<'a, T: Iterator<Item = char>> {
     file: &'a str,
-    lines: Vec<String>,
-    tokens: Vec<Token>,
+    cur_line: Rc<RwLock<String>>,
     line: usize,
     pos: usize,
-    iter: Peekable<IntoIter<char>>,
+    iter: Peekable<T>,
     current_token: String,
-    errs: Vec<Error>,
+    pub(crate) errs: Vec<Error>,
+    finished: bool,
 }
 
-impl<'a> Scanner<'a> {
-    pub fn new(file: &'a str, text: String) -> Self {
-        let text = text.replace('\t', "    ");
+impl<'a, T: Iterator<Item = char>> Scanner<'a, T> {
+    pub fn new(file: &'a str, text: T) -> Self {
         Self {
             file,
-            lines: text.split('\n').map(|x| x.to_string()).collect(),
-            tokens: vec![],
+            cur_line: Rc::new(RwLock::new(String::new())),
             line: 1,
             pos: 0,
-            iter: text.chars().collect::<Vec<_>>().into_iter().peekable(),
+            iter: text.peekable(),
             current_token: String::new(),
             errs: Vec::new(),
+            finished: false,
         }
-    }
-
-    pub fn scan_tokens(&'a mut self) -> Result<&'a Vec<Token>, Vec<Error>> {
-        self.tokens = Vec::new();
-        loop {
-            let result = self.is_at_end();
-            if result {
-                break;
-            }
-
-            // We are at the beginning of the next lexeme.
-            self.current_token = String::new();
-            if let Err(e) = self.scan_token() {
-                self.errs.push(e)
-            }
-        }
-        let token = Token::new(
-            self.file,
-            self.lines[self.line - 1].clone(),
-            TokenType::Special(Special::Eof),
-            Default::default(),
-            self.line,
-            self.pos + 1,
-            self.pos + 1,
-        );
-        self.tokens.push(token);
-        if !self.errs.is_empty() {
-            return Err(self.errs.clone());
-        }
-        Ok(&self.tokens)
     }
 
     fn is_at_end(&mut self) -> bool {
@@ -72,25 +41,29 @@ impl<'a> Scanner<'a> {
         let char = self.iter.next().unwrap_or('\0');
         self.pos += 1;
         if char == '\n' {
+            self.line += 1;
             self.pos = 0;
+            self.cur_line = Rc::new(RwLock::new(String::new()));
+        } else {
+            self.cur_line.write().unwrap().push(char);
         }
         self.current_token.push(char);
         char
     }
 
-    fn add_token(&mut self, token_type: TokenType) {
-        self.tokens.push(Token::new(
+    fn add_token(&mut self, token_type: TokenType) -> Token {
+        Token::new(
             self.file,
-            self.lines[self.line - 1].clone(),
+            Rc::clone(&self.cur_line),
             token_type,
             self.current_token.clone(),
             self.line,
             self.pos - self.current_token.len() + 1,
             self.pos,
-        ));
+        )
     }
 
-    fn number(&mut self) {
+    fn number(&mut self) -> Token {
         loop {
             let peeked = self.iter.peek();
             if peeked.is_none() || !peeked.unwrap().is_ascii_digit() {
@@ -117,7 +90,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn identifier(&mut self) {
+    fn identifier(&mut self) -> Token {
         loop {
             let peeked = self.iter.peek();
             if peeked.is_none() || !peeked.unwrap().is_alphanumeric() && *peeked.unwrap() != '_' {
@@ -133,19 +106,23 @@ impl<'a> Scanner<'a> {
             .collect::<Vec<_>>()
             .contains(&value)
         {
-            self.add_token(TokenType::KeyWord(KeyWord::from_str(&value).unwrap()));
+            self.add_token(TokenType::KeyWord(KeyWord::from_str(&value).unwrap()))
         } else {
-            self.add_token(TokenType::Literal(Literal::Identifier(value)));
+            self.add_token(TokenType::Literal(Literal::Identifier(value)))
         }
     }
 
-    fn string(&mut self) -> Result<(), Error> {
-        let start_line = self.line;
+    fn string(&mut self) -> Result<Token, Error> {
+        let start_line_num = self.line;
+        let start_line = Rc::clone(&self.cur_line);
+        let end = self.cur_line.read().unwrap().len();
         let start_pos = self.pos;
         loop {
             let peeked = self.iter.peek();
             if peeked.is_some() && *peeked.unwrap() == '\n' {
                 self.line += 1;
+                self.pos = 0;
+                self.cur_line = Rc::new(RwLock::new(String::new()));
             }
             if peeked.is_none()
                 || Literal::String(Default::default()).get_serializations()[0]
@@ -161,12 +138,12 @@ impl<'a> Scanner<'a> {
                 Scan,
                 &[Token::new(
                     self.file,
-                    self.lines[start_line - 1].clone(),
+                    start_line,
                     TokenType::Literal(Literal::String(Default::default())),
                     self.current_token.clone(),
-                    start_line,
+                    start_line_num,
                     start_pos,
-                    self.lines[start_line - 1].len(),
+                    end,
                 )],
                 "Unterminated string.",
                 "Syntax",
@@ -185,96 +162,134 @@ impl<'a> Scanner<'a> {
             .strip_suffix('"')
             .unwrap()
             .to_string();
-        self.add_token(TokenType::Literal(Literal::String(value)));
-        Ok(())
+        Ok(self.add_token(TokenType::Literal(Literal::String(value))))
     }
 
-    fn scan_token(&mut self) -> Result<(), Error> {
-        let c = self.advance();
-        let peeked = self.iter.peek().cloned();
+    fn scan_token(&mut self) -> Result<Token, Error> {
+        loop {
+            // We are at the beginning of the next lexeme.
+            self.current_token = String::new();
+            let c = self.advance();
+            let peeked = self.iter.peek().cloned();
 
-        if OneChar::iter().any(|x| x.get_serializations()[0].chars().nth(0).unwrap() == c) {
-            self.add_token(TokenType::OneChar(
-                OneChar::from_str(&c.to_string()).unwrap(),
-            ));
-        } else if OneTwoChar::iter().any(|x| x.get_serializations()[0].chars().nth(0).unwrap() == c)
-        {
-            if peeked.is_some()
-                && OneTwoChar::iter()
-                    .filter(|x| x.get_serializations()[0].len() == 2)
-                    .any(|x| x.get_serializations()[0].chars().nth(1).unwrap() == peeked.unwrap())
+            if OneChar::iter().any(|x| x.get_serializations()[0].chars().nth(0).unwrap() == c) {
+                return Ok(self.add_token(TokenType::OneChar(
+                    OneChar::from_str(&c.to_string()).unwrap(),
+                )));
+            } else if OneTwoChar::iter()
+                .any(|x| x.get_serializations()[0].chars().nth(0).unwrap() == c)
             {
-                self.advance();
-                self.add_token(TokenType::OneTwoChar(
-                    OneTwoChar::from_str(format!("{}{}", c, peeked.unwrap()).as_str()).unwrap(),
-                ));
-            } else {
-                self.add_token(TokenType::OneTwoChar(
-                    OneTwoChar::from_str(&c.to_string()).unwrap(),
-                ));
-            }
-        } else if c.to_string() == Special::Slash.get_serializations()[0] {
-            if peeked.is_some()
-                && peeked.unwrap()
-                    == Special::MultilineComment.get_serializations()[0]
-                        .chars()
-                        .nth(1)
-                        .unwrap()
-            {
-                loop {
-                    let result = self.advance();
-                    if result == '\n' {
-                        self.line += 1;
-                    }
-                    let peeked = self.iter.peek();
-                    if peeked.is_none() || result == '*' && *peeked.unwrap() == '/' {
-                        self.advance();
-                        break;
-                    }
-                }
-            } else if peeked.is_some()
-                && peeked.unwrap()
-                    == Special::SingleLineComment.get_serializations()[0]
-                        .chars()
-                        .nth(1)
-                        .unwrap()
-            {
-                loop {
-                    let peeked = self.iter.peek();
-                    if peeked.is_none() || *peeked.unwrap() == '\n' {
-                        break;
-                    }
+                if peeked.is_some()
+                    && OneTwoChar::iter()
+                        .filter(|x| x.get_serializations()[0].len() == 2)
+                        .any(|x| {
+                            x.get_serializations()[0].chars().nth(1).unwrap() == peeked.unwrap()
+                        })
+                {
                     self.advance();
+                    return Ok(self.add_token(TokenType::OneTwoChar(
+                        OneTwoChar::from_str(format!("{}{}", c, peeked.unwrap()).as_str()).unwrap(),
+                    )));
+                } else {
+                    return Ok(self.add_token(TokenType::OneTwoChar(
+                        OneTwoChar::from_str(&c.to_string()).unwrap(),
+                    )));
                 }
+            } else if c.to_string() == Special::Slash.get_serializations()[0] {
+                if peeked.is_some()
+                    && peeked.unwrap()
+                        == Special::MultilineComment.get_serializations()[0]
+                            .chars()
+                            .nth(1)
+                            .unwrap()
+                {
+                    loop {
+                        let result = self.advance();
+                        let peeked = self.iter.peek();
+                        if peeked.is_none() || result == '*' && *peeked.unwrap() == '/' {
+                            self.advance();
+                            break;
+                        }
+                    }
+                } else if peeked.is_some()
+                    && peeked.unwrap()
+                        == Special::SingleLineComment.get_serializations()[0]
+                            .chars()
+                            .nth(1)
+                            .unwrap()
+                {
+                    loop {
+                        let peeked = self.iter.peek();
+                        if peeked.is_none() || *peeked.unwrap() == '\n' {
+                            break;
+                        }
+                        self.advance();
+                    }
+                } else {
+                    return Ok(self.add_token(TokenType::Special(Special::Slash)));
+                }
+            } else if " \r\t\n".contains(c) {
+                // ignore whitespace
+            } else if Literal::String(Default::default()).get_serializations()[0].contains(c) {
+                return self.string();
+            } else if c.is_ascii_digit() {
+                return Ok(self.number());
+            } else if c.is_alphabetic() {
+                return Ok(self.identifier());
             } else {
-                self.add_token(TokenType::Special(Special::Slash));
+                return Err(Error::new(
+                    Scan,
+                    &[Token::new(
+                        self.file,
+                        Rc::clone(&self.cur_line),
+                        TokenType::OneChar(OneChar::Plus),
+                        c.to_string(),
+                        self.line,
+                        self.pos,
+                        self.pos,
+                    )],
+                    format!("Unexpected character '{c}'.").as_str(),
+                    "Syntax",
+                ));
             }
-        } else if " \r\t".contains(c) {
-            // ignore whitespace
-        } else if c == '\n' {
-            self.line += 1;
-        } else if Literal::String(Default::default()).get_serializations()[0].contains(c) {
-            self.string()?;
-        } else if c.is_ascii_digit() {
-            self.number();
-        } else if c.is_alphabetic() {
-            self.identifier();
-        } else {
-            return Err(Error::new(
-                Scan,
-                &[Token::new(
-                    self.file,
-                    self.lines[self.line - 1].clone(),
-                    TokenType::OneChar(OneChar::Plus),
-                    c.to_string(),
-                    self.line,
-                    self.pos,
-                    self.pos,
-                )],
-                format!("Unexpected character '{c}'.").as_str(),
-                "Syntax",
-            ));
         }
-        Ok(())
     }
 }
+
+impl<T: Iterator<Item = char>> Iterator for Scanner<'_, T> {
+    type Item = Token;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let result = self.is_at_end();
+            if result {
+                break;
+            }
+
+            match self.scan_token() {
+                Ok(token) => return Some(token),
+                Err(e) => self.errs.push(e),
+            }
+        }
+        if !self.finished {
+            let token = Token::new(
+                self.file,
+                Rc::clone(&self.cur_line),
+                TokenType::Special(Special::Eof),
+                Default::default(),
+                self.line,
+                self.pos + 1,
+                self.pos + 1,
+            );
+            self.finished = true;
+            return Some(token);
+        }
+        // TODO: handle errors
+        // if !self.errs.is_empty() {
+        //     return Err(self.errs.clone());
+        // }
+        None
+    }
+}
+
+mod tests {}

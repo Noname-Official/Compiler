@@ -1,4 +1,4 @@
-use std::{fmt, mem::discriminant};
+use std::{fmt, hash::Hash, mem::discriminant, rc::Rc, sync::RwLock};
 
 pub mod token_type {
     use std::{
@@ -150,7 +150,7 @@ pub mod token_type {
     impl_display!(Special);
 }
 
-#[derive(Debug, Clone, PartialEq, Hash, Eq)]
+#[derive(Debug, Clone)]
 pub struct Token {
     pub token_type: token_type::TokenType,
     pub lexeme: String,
@@ -158,13 +158,39 @@ pub struct Token {
     pub line: usize,
     pub begin: usize,
     pub end: usize,
-    pub line_contents: String,
+    pub line_contents: Rc<RwLock<String>>,
+}
+
+impl PartialEq for Token {
+    fn eq(&self, other: &Self) -> bool {
+        self.token_type == other.token_type
+            && self.lexeme == other.lexeme
+            && self.file == other.file
+            && self.line == other.line
+            && self.begin == other.begin
+            && self.end == other.end
+            && *self.line_contents.read().unwrap() == *other.line_contents.read().unwrap()
+    }
+}
+
+impl Eq for Token {}
+
+impl Hash for Token {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.token_type.hash(state);
+        self.lexeme.hash(state);
+        self.file.hash(state);
+        self.line.hash(state);
+        self.begin.hash(state);
+        self.end.hash(state);
+        self.line_contents.read().unwrap().hash(state);
+    }
 }
 
 impl<'a> Token {
     pub fn new(
         file: &'a str,
-        line_contents: String,
+        line_contents: Rc<RwLock<String>>,
         token_type: token_type::TokenType,
         lexeme: String,
         line: usize,

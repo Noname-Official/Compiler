@@ -8,6 +8,7 @@ mod interpreter;
 mod lox_lib;
 mod nodes;
 mod parse;
+mod peek2;
 mod print_ast;
 mod scanner;
 mod token;
@@ -23,7 +24,8 @@ use scanner::Scanner;
 use std::{
     env::args,
     fs,
-    io::{stdin, stdout, Write},
+    io::{stdin, stdout, BufRead, BufReader, Write},
+    iter,
     process::exit,
 };
 
@@ -42,40 +44,49 @@ macro_rules! input {
     };
 }
 
-fn run<'a>(
+fn run<'a, T: Iterator<Item = char>>(
     file_name: &'a str,
-    program: &'a str,
+    program: T,
     environment: &'a mut Scope,
 ) -> Result<Option<LoxType>, Vec<Error>> {
-    // println!("\x1b[38;2;0;0;255mscanning...\x1b[0m");
+    println!("\x1b[38;2;0;0;255mscanning...\x1b[0m");
 
-    let mut scanner = Scanner::new(file_name, program.to_string());
-    let tokens = scanner.scan_tokens()?;
+    let scanner = Scanner::new(file_name, program);
 
-    // println!("\x1b[38;2;0;0;255mparsing...\x1b[0m");
+    println!("\x1b[38;2;0;0;255mparsing...\x1b[0m");
 
-    let mut parser = Parser::new(tokens);
+    let mut parser = Parser::new(scanner);
     let ast = parser.parse()?;
 
-    // println!("\x1b[38;2;0;0;255manalyzing...\x1b[0m");
+    println!("\x1b[38;2;0;0;255manalyzing...\x1b[0m");
 
     ast.analyse(&None, false, environment)?;
 
-    // println!("\x1b[38;2;0;0;255mrunning...\x1b[0m\n");
+    println!("\x1b[38;2;0;0;255mrunning...\x1b[0m\n");
 
     let result = match ast.interpret(environment) {
         Ok(ok) => ok,
         Err(err) => return Err(vec![err]),
     };
 
-    // println!("\n\x1b[38;2;0;0;255mdone!\x1b[0m\n");
+    println!("\n\x1b[38;2;0;0;255mdone!\x1b[0m\n");
 
     Ok(result)
 }
 
 fn run_file(path: &String) {
-    let contents = fs::read_to_string(path).expect("Failed to read from file");
-    if let Err(e) = run(path, &contents, &mut Scope::new()) {
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .open(path)
+        .expect("Failed to read from file");
+    let buf_reader = BufReader::new(file);
+    let contents = buf_reader.lines().flat_map(|line| {
+        line.expect("lines failed")
+            .chars()
+            .chain(iter::once('\n'))
+            .collect::<Vec<_>>()
+    });
+    if let Err(e) = run(path, contents, &mut Scope::new()) {
         for err in e {
             err.throw();
         }
@@ -87,7 +98,7 @@ fn run_prompt() {
     let mut input = input!("> ");
     let mut environment = Scope::new();
     while input != "exit" {
-        match run(&String::from("stdin"), &input, &mut environment) {
+        match run(&String::from("stdin"), input.chars(), &mut environment) {
             Ok(res) => {
                 if let Some(res) = res {
                     println!("{res}")

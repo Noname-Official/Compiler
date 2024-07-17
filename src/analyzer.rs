@@ -79,9 +79,6 @@ impl Analyse for Statement {
                         LoxType::Null
                     }
                 };
-                // let drop_guard = env.enter_scope();
-                // let environment = env.clone();
-                // drop(drop_guard);
                 if let Err(e) = env.define(
                     name.lexeme.clone(),
                     Some(LoxType::Function(LoxFunction::UserDefined {

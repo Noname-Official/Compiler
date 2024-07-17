@@ -5,6 +5,7 @@ use crate::{
         Expression, Factor, ForStmt, FuncCall, FuncCall2, FuncDecl, GetTokens, IfStmt, LogicAnd,
         LogicOr, Primary, PrintStmt, Program, Statement, Term, Unary, VarDecl, WhileStmt,
     },
+    peek2::{Peek2, ToPeek2},
     token::{
         token_type::{KeyWord, Literal, OneChar, OneTwoChar, Special, TokenType},
         Token,
@@ -197,22 +198,20 @@ use crate::{
 //     };
 // }
 
-pub struct Parser<'a> {
-    tokens: &'a Vec<Token>,
-    index: usize,
+pub struct Parser<T> {
+    pub(crate) tokens: T,
     errs: Vec<Error>,
 }
 
-impl<'a> Parser<'a> {
-    pub fn new(tokens: &'a Vec<Token>) -> Self {
+impl<T: Iterator<Item = Token>> Parser<Peek2<T>> {
+    pub fn new(tokens: T) -> Self {
         Self {
-            tokens,
-            index: 0,
+            tokens: tokens.to_peek2(),
             errs: Vec::new(),
         }
     }
 
-    pub fn parse(&'a mut self) -> Result<Program, Vec<Error>> {
+    pub fn parse(&mut self) -> Result<Program, Vec<Error>> {
         let prog = self.program();
         if !self.errs.is_empty() {
             return Err(self.errs.clone());
@@ -249,7 +248,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn match_token_type(&self, types: Vec<TokenType>) -> bool {
+    fn match_token_type(&mut self, types: Vec<TokenType>) -> bool {
         for token_type in types {
             if self.check(token_type) {
                 return true;
@@ -258,35 +257,34 @@ impl<'a> Parser<'a> {
         false
     }
 
-    fn check(&self, token_type: TokenType) -> bool {
+    fn check(&mut self, token_type: TokenType) -> bool {
         self.peek().eq_type(&token_type)
     }
 
-    fn is_at_end(&self) -> bool {
+    fn is_at_end(&mut self) -> bool {
         self.peek().eq_type(&TokenType::Special(Special::Eof))
     }
 
-    fn peek(&self) -> Token {
-        self.tokens[self.index].clone()
+    fn peek(&mut self) -> &Token {
+        self.tokens.peek().unwrap()
     }
 
-    fn peek2(&self) -> Token {
+    fn peek2(&mut self) -> &Token {
         if self.is_at_end() {
             return self.peek();
         }
-        self.tokens[self.index + 1].clone()
+        self.tokens.peek2().unwrap()
     }
 
-    fn check2(&self, token_type: TokenType) -> bool {
+    fn check2(&mut self, token_type: TokenType) -> bool {
         self.peek2().eq_type(&token_type)
     }
 
     fn advance(&mut self) -> Token {
-        let val = self.tokens[self.index].clone();
-        if !self.is_at_end() {
-            self.index += 1;
+        if self.is_at_end() {
+            return self.peek().clone();
         }
-        val
+        self.tokens.next().unwrap()
     }
 
     fn consume(
@@ -385,10 +383,7 @@ impl<'a> Parser<'a> {
             ))
         } else if self.check(TokenType::KeyWord(KeyWord::Const)) {
             self.const_decl().map(|const_decl| {
-                Statement::ConstDecl(
-                    const_decl.get_tokens().clone().clone(),
-                    (Box::new(const_decl),),
-                )
+                Statement::ConstDecl(const_decl.get_tokens().clone(), (Box::new(const_decl),))
             })
         } else if self.check(TokenType::KeyWord(KeyWord::Continue)) {
             let continue_kw = self.advance();
@@ -798,7 +793,7 @@ impl<'a> Parser<'a> {
 
     fn expr_stmt(&mut self) -> Result<ExprStmt, Error> {
         let arg1 = self.expression()?;
-        let mut tokens = arg1.get_tokens().clone().clone();
+        let mut tokens = arg1.get_tokens().clone();
         let arg2 = self.consume(
             TokenType::OneChar(OneChar::Semicolon),
             "Semicolon expected",
@@ -889,17 +884,22 @@ impl<'a> Parser<'a> {
     }
 
     fn expression(&mut self) -> Result<Expression, Error> {
-        let begin_index = self.index;
-        if let Ok(assignment) = self.assignment() {
+        if self
+            .peek()
+            .eq_type(&TokenType::Literal(Literal::Identifier(Default::default())))
+            && self
+                .peek2()
+                .eq_type(&TokenType::OneTwoChar(OneTwoChar::Equal))
+        {
+            let assignment = self.assignment()?;
             Ok(Expression::Assignment(
-                assignment.get_tokens().clone().clone(),
+                assignment.get_tokens().clone(),
                 (Box::new(assignment),),
             ))
         } else {
-            self.index = begin_index;
             let logic_or = self.logic_or()?;
             Ok(Expression::Expression(
-                logic_or.get_tokens().clone().clone(),
+                logic_or.get_tokens().clone(),
                 (Box::new(logic_or),),
             ))
         }
@@ -952,7 +952,7 @@ impl<'a> Parser<'a> {
 
     fn equality(&mut self) -> Result<Equality, Error> {
         let arg1 = self.comparison()?;
-        let mut tokens = arg1.get_tokens().clone().clone();
+        let mut tokens = arg1.get_tokens().clone();
         let mut arg2 = Vec::new();
         while self.match_token_type(vec![
             TokenType::OneTwoChar(OneTwoChar::BangEqual),
@@ -968,7 +968,7 @@ impl<'a> Parser<'a> {
     }
     fn comparison(&mut self) -> Result<Comparison, Error> {
         let arg1 = self.term()?;
-        let mut tokens = arg1.get_tokens().clone().clone();
+        let mut tokens = arg1.get_tokens().clone();
         let mut arg2 = Vec::new();
         while self.match_token_type(vec![
             TokenType::OneTwoChar(OneTwoChar::Less),
@@ -986,7 +986,7 @@ impl<'a> Parser<'a> {
     }
     fn term(&mut self) -> Result<Term, Error> {
         let arg1 = self.factor()?;
-        let mut tokens = arg1.get_tokens().clone().clone();
+        let mut tokens = arg1.get_tokens().clone();
         let mut arg2 = Vec::new();
         while self.match_token_type(vec![
             TokenType::OneChar(OneChar::Plus),
@@ -1002,7 +1002,7 @@ impl<'a> Parser<'a> {
     }
     fn factor(&mut self) -> Result<Factor, Error> {
         let arg1 = self.unary()?;
-        let mut tokens = arg1.get_tokens().clone().clone().clone();
+        let mut tokens = arg1.get_tokens().clone().clone();
         let mut arg2 = Vec::new();
         while self.match_token_type(vec![
             TokenType::OneChar(OneChar::Star),

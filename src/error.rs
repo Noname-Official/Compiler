@@ -1,5 +1,5 @@
 use crate::{lox_lib::LoxType, token::Token};
-use std::fmt::Display;
+use std::{fmt::Display, rc::Rc, sync::RwLock};
 
 macro_rules! errors {
     ($($name:ident $(($($args:tt)*))? $(:$super_type:ident)?),* $(,)?) => {
@@ -45,7 +45,7 @@ pub struct Error {
     last_line: usize,
     begin: usize,
     end: usize,
-    lines: Vec<(usize, String)>,
+    lines: Vec<(usize, Rc<RwLock<String>>)>,
     msg: String,
     error_type: &'static str,
 }
@@ -93,12 +93,12 @@ impl Throw for Error {
 
         eprintln!(
             "\x1b[38;2;255;0;0;1m{}Error\x1b[39m: {}\x1b[0m",
-            self.error_type, self.msg
+            self.error_type, self.msg,
         );
 
         eprintln!(
             "\x1b[38;2;49;222;219m  -->\x1b[0m {}:{}:{}",
-            self.file, self.first_line, self.begin
+            self.file, self.first_line, self.begin,
         );
 
         eprintln!("\x1b[38;2;49;222;219m{spaces} |\x1b[0m");
@@ -106,34 +106,36 @@ impl Throw for Error {
         if self.first_line == self.last_line {
             eprintln!(
                 "\x1b[38;2;49;222;219m{} |\x1b[0m {}",
-                self.first_line, self.lines[0].1
+                self.first_line,
+                self.lines[0].1.read().unwrap(),
             );
             eprintln!(
                 "\x1b[38;2;49;222;219m{spaces} |{}\x1b[38;2;255;0;0m{}\x1b[0m",
                 String::from(" ").repeat(self.begin),
-                String::from("^").repeat(self.end - self.begin + 1)
+                String::from("^").repeat(self.end - self.begin + 1),
             );
         } else {
             eprintln!(
                 "\x1b[38;2;49;222;219m{}{} |\x1b[0m   {}",
                 self.first_line,
                 String::from(" ").repeat(space_count - self.first_line.to_string().len()),
-                self.lines[0].1
+                self.lines[0].1.read().unwrap(),
             );
             eprintln!(
                 "\x1b[38;2;49;222;219m{spaces} |\x1b[38;2;255;0;0m  {}^\x1b[0m",
-                String::from("_").repeat(self.begin)
+                String::from("_").repeat(self.begin),
             );
             for (line_number, line) in self.lines.iter().skip(1) {
                 eprintln!(
-                    "\x1b[38;2;49;222;219m{}{} |\x1b[38;2;255;0;0m |\x1b[0m {line}",
+                    "\x1b[38;2;49;222;219m{}{} |\x1b[38;2;255;0;0m |\x1b[0m {}",
                     line_number,
-                    String::from(" ").repeat(space_count - line_number.to_string().len())
+                    String::from(" ").repeat(space_count - line_number.to_string().len()),
+                    line.read().unwrap(),
                 );
             }
             eprintln!(
                 "\x1b[38;2;49;222;219m{spaces} |\x1b[38;2;255;0;0m |{}^\x1b[0m",
-                String::from("_").repeat(self.begin)
+                String::from("_").repeat(self.begin),
             );
         }
     }
